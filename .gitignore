@@ -1,0 +1,13 @@
+build/
+*.o
+*.d
+*.gcda
+*.gcno
+perf.data*
+compile_commands.json
+.cache/
+.vscode/
+.idea/
+
+# Personal engineering notebook - local only, never published
+notebook/
