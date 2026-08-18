@@ -1,0 +1,23 @@
+build/
+*.o
+*.d
+*.gcda
+*.gcno
+perf.data*
+compile_commands.json
+.cache/
+.vscode/
+.idea/
+
+# Personal engineering notebook - local only, never published
+notebook/
+
+# Never commit key material or credentials
+id_rsa*
+id_ecdsa*
+id_ed25519*
+*.pem
+*.key
+*.p12
+.env
+.netrc
