@@ -6,33 +6,53 @@ with every latency claim measured rather than asserted.
 
 The receive path performs no allocation, no copy, and no syscall.
 
----
+***
 
 ## Table of contents
 
-- [What this is](#what-this-is)
-- [Why latency is worth money](#why-latency-is-worth-money)
-- [Where the microseconds actually go](#where-the-microseconds-actually-go)
-- [What kernel bypass changes](#what-kernel-bypass-changes)
-- [The emulation trade](#the-emulation-trade)
-- **[Architecture](#architecture)**
-  - [1. The two receive paths](#1-the-two-receive-paths)
-  - [2. System decomposition](#2-system-decomposition)
-  - [3. The RX hot path, step by step](#3-the-rx-hot-path-step-by-step)
-  - [4. Descriptor ring mechanics](#4-descriptor-ring-mechanics)
-  - [5. Packet anatomy: what the decoder sees](#5-packet-anatomy-what-the-decoder-sees)
-  - [6. Threading and core topology](#6-threading-and-core-topology)
-  - [7. Cache-line discipline](#7-cache-line-discipline)
-  - [8. Latency budget](#8-latency-budget)
-  - [9. Module map](#9-module-map)
-- [What each component demonstrates](#what-each-component-demonstrates)
-- [Engineering rules this project holds itself to](#engineering-rules-this-project-holds-itself-to)
-- [What this is not](#what-this-is-not)
-- [Status](#status)
-- [Results so far](#results-so-far)
-- [Build and run](#build-and-run)
+* [What this is](#what-this-is)
 
----
+* [Why latency is worth money](#why-latency-is-worth-money)
+
+* [Where the microseconds actually go](#where-the-microseconds-actually-go)
+
+* [What kernel bypass changes](#what-kernel-bypass-changes)
+
+* [The emulation trade](#the-emulation-trade)
+
+* **[Architecture](#architecture)**
+
+  * [1. The two receive paths](#1-the-two-receive-paths)
+
+  * [2. System decomposition](#2-system-decomposition)
+
+  * [3. The RX hot path, step by step](#3-the-rx-hot-path-step-by-step)
+
+  * [4. Descriptor ring mechanics](#4-descriptor-ring-mechanics)
+
+  * [5. Packet anatomy: what the decoder sees](#5-packet-anatomy-what-the-decoder-sees)
+
+  * [6. Threading and core topology](#6-threading-and-core-topology)
+
+  * [7. Cache-line discipline](#7-cache-line-discipline)
+
+  * [8. Latency budget](#8-latency-budget)
+
+  * [9. Module map](#9-module-map)
+
+* [What each component demonstrates](#what-each-component-demonstrates)
+
+* [Engineering rules this project holds itself to](#engineering-rules-this-project-holds-itself-to)
+
+* [What this is not](#what-this-is-not)
+
+* [Status](#status)
+
+* [Results so far](#results-so-far)
+
+* [Build and run](#build-and-run)
+
+***
 
 ## What this is
 
@@ -48,11 +68,15 @@ delay here is added to the delay of everything downstream.
 
 This project builds that path end to end, at the level real systems are built:
 
-- a device that delivers packets into memory without the operating system involved,
-- a driver that manages the device's descriptor rings from user space,
-- a decoder that reads the exchange's binary protocol in place, without copying,
-- an order book that maintains price levels under a continuous update stream,
-- and instrumentation that reports what all of it actually cost.
+* a device that delivers packets into memory without the operating system involved,
+
+* a driver that manages the device's descriptor rings from user space,
+
+* a decoder that reads the exchange's binary protocol in place, without copying,
+
+* an order book that maintains price levels under a continuous update stream,
+
+* and instrumentation that reports what all of it actually cost.
 
 Nothing is claimed here that a benchmark in `bench/` does not produce.
 
@@ -83,7 +107,7 @@ The competitive consequence: firms operating at this level measure **tick-to-tra
 latency — wire arrival to order departure — and treat it as a primary engineering
 metric. Software stacks land in the low single-digit microseconds; FPGA
 implementations reach into hundreds of nanoseconds. In that regime, a single
-avoidable DRAM cache miss (**~170 ns on the host this was measured on**) is a
+avoidable DRAM cache miss (**\~170 ns on the host this was measured on**) is a
 meaningful fraction of the entire budget. That is why this project starts by
 measuring the memory hierarchy rather than by writing a parser.
 
@@ -105,12 +129,15 @@ Kernel bypass removes the operating system from the data path entirely. The
 application maps the NIC's registers and DMA buffers into its own address space and
 talks to the hardware directly:
 
-- **No syscall.** Receiving is a load from a memory location the device writes.
-- **No interrupt.** The driver polls a descriptor ring in a busy loop. Nothing
+* **No syscall.** Receiving is a load from a memory location the device writes.
+
+* **No interrupt.** The driver polls a descriptor ring in a busy loop. Nothing
   wakes anything up; the thread is already spinning, pinned to a dedicated core.
-- **No copy.** The device deposits the frame into a buffer the application already
+
+* **No copy.** The device deposits the frame into a buffer the application already
   owns, and the decoder reads it there.
-- **No context switch.** The privilege boundary is never crossed on the hot path.
+
+* **No context switch.** The privilege boundary is never crossed on the hot path.
 
 The cost is real and worth stating plainly: a polling core is consumed at 100%
 whether or not traffic arrives, memory must be pinned, and the application takes on
@@ -148,7 +175,7 @@ A conventional `AF_PACKET`/`AF_XDP` receive path is kept alongside as a **contro
 so bypass numbers are always quoted against a real kernel path measured on the same
 host, in the same run.
 
----
+***
 
 # Architecture
 
@@ -198,14 +225,14 @@ flowchart TB
 
 Nine stages become two. What was deleted:
 
-| Deleted | Why it cost | Why it was also *variable* |
-|---|---|---|
-| Interrupt + softirq | Two context switches, cache pollution | Interrupt coalescing batches arbitrarily; IRQ lands on an arbitrary core |
-| IP + UDP processing | Checksums and demultiplexing the app does not need | Contends with all other network traffic on the host |
-| Socket buffer copy | A full pass over the payload through cache | Buffer pressure causes drops under burst |
-| Wake + reschedule | Thread must be selected by the scheduler | **The single worst tail contributor** — unbounded under load |
-| `recvmsg` privilege switch | Ring 3 → ring 0 → ring 3 | Cost varies with speculation mitigations |
-| Copy to user buffer | A second full pass over the payload | Page faults on first touch |
+| Deleted                    | Why it cost                                        | Why it was also *variable*                                               |
+| -------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
+| Interrupt + softirq        | Two context switches, cache pollution              | Interrupt coalescing batches arbitrarily; IRQ lands on an arbitrary core |
+| IP + UDP processing        | Checksums and demultiplexing the app does not need | Contends with all other network traffic on the host                      |
+| Socket buffer copy         | A full pass over the payload through cache         | Buffer pressure causes drops under burst                                 |
+| Wake + reschedule          | Thread must be selected by the scheduler           | **The single worst tail contributor** — unbounded under load             |
+| `recvmsg` privilege switch | Ring 3 → ring 0 → ring 3                           | Cost varies with speculation mitigations                                 |
+| Copy to user buffer        | A second full pass over the payload                | Page faults on first touch                                               |
 
 The variability column matters more than the cost column. Removing the mean is
 useful; removing the *tail* is the point.
@@ -440,7 +467,7 @@ by `host_probe` on day one:
 3. **Prices are fixed point with 4 implied decimals.** All book arithmetic is
    integer. Floating point is absent from the hot path entirely: it is slower to
    compare, and its rounding is unacceptable in a matching context.
-4. **Overlay structs must be `packed`.** Natural alignment would insert padding
+4. **Overlay structs must be** **`packed`.** Natural alignment would insert padding
    this layout does not have, and every field after the first would be read from
    the wrong offset. `host_probe` asserts this and exits non-zero if it is untrue.
 
@@ -535,16 +562,16 @@ Targets for the receive path, derived from the measured memory costs. **These ar
 design budgets, not results** — each becomes a measured number, with tail
 percentiles, as its component lands.
 
-| Stage | Budget | Dominated by |
-|---|---:|---|
-| Descriptor poll detects arrival | ~10 ns | L1/L2 hit on the ring line |
-| Read descriptor, resolve buffer | ~5 ns | same line, already fetched |
-| First touch of payload | ~30–170 ns | **cache miss — the single largest item** |
-| MoldUDP64 header validate | ~10 ns | one line, sequential |
-| ITCH decode, per message | ~20 ns | byte swaps and a dispatch branch |
-| SPSC handoff | ~30 ns | cross-core line transfer within L3 |
-| Book update, per message | ~30–60 ns | 1–2 misses, layout dependent |
-| **Wire-visible to book-updated** | **~150–350 ns** | measured end to end at day 15 |
+| Stage                            |           Budget | Dominated by                             |
+| -------------------------------- | ---------------: | ---------------------------------------- |
+| Descriptor poll detects arrival  |          \~10 ns | L1/L2 hit on the ring line               |
+| Read descriptor, resolve buffer  |           \~5 ns | same line, already fetched               |
+| First touch of payload           |      \~30–170 ns | **cache miss — the single largest item** |
+| MoldUDP64 header validate        |          \~10 ns | one line, sequential                     |
+| ITCH decode, per message         |          \~20 ns | byte swaps and a dispatch branch         |
+| SPSC handoff                     |          \~30 ns | cross-core line transfer within L3       |
+| Book update, per message         |       \~30–60 ns | 1–2 misses, layout dependent             |
+| **Wire-visible to book-updated** | **\~150–350 ns** | measured end to end at day 15            |
 
 The third row dominates everything below it, which is the argument the whole design
 rests on: **the payload's first touch costs more than all the parsing put
@@ -569,34 +596,34 @@ kernel-bypass/
 
 Planned as components land:
 
-| Path | Contents |
-|---|---|
-| `src/nicsim/` | register file, DMA engine, packet source |
-| `src/driver/` | poll loop, ring management, buffer pool |
+| Path          | Contents                                   |
+| ------------- | ------------------------------------------ |
+| `src/nicsim/` | register file, DMA engine, packet source   |
+| `src/driver/` | poll loop, ring management, buffer pool    |
 | `src/decode/` | MoldUDP64 framing, ITCH 5.0 message decode |
-| `src/book/` | price-level order book |
-| `src/instr/` | TSC timestamps, latency histograms |
-| `tests/` | unit tests, plus replay determinism checks |
+| `src/book/`   | price-level order book                     |
+| `src/instr/`  | TSC timestamps, latency histograms         |
+| `tests/`      | unit tests, plus replay determinism checks |
 
----
+***
 
 ## What each component demonstrates
 
 Each piece exists because it forces a specific competence that low-latency work
 depends on.
 
-| Component | Concept it forces | Why the discipline cares |
-|---|---|---|
-| `host_probe` | ABI, alignment, byte order, struct padding | Zero-copy decoding is only sound if the host's layout rules are known and asserted, not assumed |
-| `memory_hierarchy` | Cache latency, spatial locality, prefetching, benchmark methodology | The unit of cost in this domain is the cache miss; also proves a benchmark measures what it claims |
-| `nicsim` register file | MMIO, `volatile`, device vs memory semantics | A device register is an address that is not memory; loads and stores to it have side effects and cannot be cached, reordered, or elided |
-| Descriptor rings | Producer/consumer ownership, wraparound, batching | The universal interface between a NIC and a driver; identical in DPDK, `io_uring`, and every vendor's datasheet |
-| Poll-mode driver | Busy-wait vs interrupt, core pinning, syscall cost | Removing the kernel from the data path is the defining move of the field |
-| DMA buffer pool | Pre-allocation, buffer lifetime, pinned memory | Allocation on a hot path is unbounded latency; ownership bugs here are silent corruption, not crashes |
-| SPSC ring | Lock-free handoff, `acquire`/`release`, false sharing | Thread handoff without a mutex; and the measurable cost of two cores writing one cache line |
-| ITCH 5.0 decoder | Binary protocol decode, big-endian, packed layout, branch behaviour | Real exchange protocol; in-place decode with no allocation is the production technique |
-| Order book | Data structure choice under a hot update stream | The state every strategy reads; layout dominates asymptotic complexity at this scale |
-| TSC instrumentation | `rdtsc`, invariant TSC, histograms, tail percentiles | Sub-microsecond timing needs a cycle counter; and an average latency hides the failure mode |
+| Component              | Concept it forces                                                   | Why the discipline cares                                                                                                                |
+| ---------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `host_probe`           | ABI, alignment, byte order, struct padding                          | Zero-copy decoding is only sound if the host's layout rules are known and asserted, not assumed                                         |
+| `memory_hierarchy`     | Cache latency, spatial locality, prefetching, benchmark methodology | The unit of cost in this domain is the cache miss; also proves a benchmark measures what it claims                                      |
+| `nicsim` register file | MMIO, `volatile`, device vs memory semantics                        | A device register is an address that is not memory; loads and stores to it have side effects and cannot be cached, reordered, or elided |
+| Descriptor rings       | Producer/consumer ownership, wraparound, batching                   | The universal interface between a NIC and a driver; identical in DPDK, `io_uring`, and every vendor's datasheet                         |
+| Poll-mode driver       | Busy-wait vs interrupt, core pinning, syscall cost                  | Removing the kernel from the data path is the defining move of the field                                                                |
+| DMA buffer pool        | Pre-allocation, buffer lifetime, pinned memory                      | Allocation on a hot path is unbounded latency; ownership bugs here are silent corruption, not crashes                                   |
+| SPSC ring              | Lock-free handoff, `acquire`/`release`, false sharing               | Thread handoff without a mutex; and the measurable cost of two cores writing one cache line                                             |
+| ITCH 5.0 decoder       | Binary protocol decode, big-endian, packed layout, branch behaviour | Real exchange protocol; in-place decode with no allocation is the production technique                                                  |
+| Order book             | Data structure choice under a hot update stream                     | The state every strategy reads; layout dominates asymptotic complexity at this scale                                                    |
+| TSC instrumentation    | `rdtsc`, invariant TSC, histograms, tail percentiles                | Sub-microsecond timing needs a cycle counter; and an average latency hides the failure mode                                             |
 
 The through-line: **mechanical sympathy.** Understanding what the hardware and the
 operating system are actually doing, and writing code that cooperates with them
@@ -609,32 +636,41 @@ These are consequences of the measurements in
 DRAM access costs 54–66× an L1 hit and traversal order alone moved identical work
 by 37×.
 
-- **No allocation on the hot path.** Every buffer comes from a pool sized at
+* **No allocation on the hot path.** Every buffer comes from a pool sized at
   startup. `new`, `malloc`, and any container that might grow are confined to
   initialisation. Allocation is unbounded latency, and the tail is what matters.
-- **No syscalls on the hot path.** Receiving is a poll of a memory location.
-- **Zero copy.** A frame is decoded in the buffer the device wrote it into.
-- **Hot working set bounded by L2 (512 KiB).** Ring sizes, pool extent, and the
+
+* **No syscalls on the hot path.** Receiving is a poll of a memory location.
+
+* **Zero copy.** A frame is decoded in the buffer the device wrote it into.
+
+* **Hot working set bounded by L2 (512 KiB).** Ring sizes, pool extent, and the
   book's resident price levels are chosen so steady-state footprint stays resident.
-- **No shared cache lines between threads.** Producer and consumer indices sit on
+
+* **No shared cache lines between threads.** Producer and consumer indices sit on
   separate lines; anything crossing a thread boundary is padded, and its memory
   ordering is stated explicitly rather than left to a default.
-- **Integer arithmetic only on the hot path.** Prices are fixed point. No floating
+
+* **Integer arithmetic only on the hot path.** Prices are fixed point. No floating
   point in decode or book maintenance.
-- **Every claim is measured.** Reported as a distribution with tail percentiles,
+
+* **Every claim is measured.** Reported as a distribution with tail percentiles,
   against the kernel path as a control, on a named host, reproducible from `bench/`.
 
 ## What this is not
 
 Stated plainly, because inflated claims are worse than modest ones:
 
-- **Not a production trading system.** There is no order entry, no risk layer, no
+* **Not a production trading system.** There is no order entry, no risk layer, no
   exchange session management, no failover, and no gap recovery.
-- **Not real hardware latency.** The device is emulated; absolute numbers are not
+
+* **Not real hardware latency.** The device is emulated; absolute numbers are not
   NIC numbers. What transfers is the software contract above the device.
-- **Not a DPDK replacement.** DPDK is a mature ecosystem with real PMDs. This
+
+* **Not a DPDK replacement.** DPDK is a mature ecosystem with real PMDs. This
   builds the same concepts from scratch to understand them, not to compete.
-- **Not FPGA-class.** The fastest tick-to-trade paths in the industry are in
+
+* **Not FPGA-class.** The fastest tick-to-trade paths in the industry are in
   hardware. This is a software stack, with software's floor.
 
 What it *is*: a correct, measured, from-scratch implementation of the receive path
@@ -645,18 +681,18 @@ that every one of those systems is built on top of.
 Under active development. Components land with a benchmark and a document; the
 table reflects what is actually merged.
 
-| Component | Status |
-|---|---|
-| Host ABI verification (`host_probe`) | ✅ merged |
-| Memory hierarchy baseline | ✅ merged |
-| `nicsim` register file and BAR semantics | 🔜 next |
-| RX/TX descriptor rings + doorbells | 🔜 |
-| Poll-mode user-space driver | 🔜 |
-| Lock-free SPSC handoff | 🔜 |
-| MoldUDP64 + ITCH 5.0 zero-copy decoder | 🔜 |
-| Price-level order book | 🔜 |
-| TSC instrumentation + latency histograms | 🔜 |
-| Kernel-path control (`AF_PACKET`/`AF_XDP`) | 🔜 |
+| Component                                  | Status   |
+| ------------------------------------------ | -------- |
+| Host ABI verification (`host_probe`)       | ✅ merged |
+| Memory hierarchy baseline                  | ✅ merged |
+| `nicsim` register file and BAR semantics   | 🔜 next  |
+| RX/TX descriptor rings + doorbells         | 🔜       |
+| Poll-mode user-space driver                | 🔜       |
+| Lock-free SPSC handoff                     | 🔜       |
+| MoldUDP64 + ITCH 5.0 zero-copy decoder     | 🔜       |
+| Price-level order book                     | 🔜       |
+| TSC instrumentation + latency histograms   | 🔜       |
+| Kernel-path control (`AF_PACKET`/`AF_XDP`) | 🔜       |
 
 ## Results so far
 
@@ -667,12 +703,12 @@ Full method and analysis: [docs/benchmarks/memory-hierarchy.md](docs/benchmarks/
 over a random cycle of cache-line-sized nodes, so the prefetcher cannot run ahead
 and one miss is outstanding at a time:
 
-| working set | resident in | ns / access | vs L1 |
-|---|---|---:|---:|
-| 32 KiB | L1d | 2.65 | 1.0× |
-| 256 KiB | L2 | 7.01 | 2.6× |
-| 4 MiB | L3 | 29.21 | 11× |
-| 128 MiB | DRAM | 171.56 | **65×** |
+| working set | resident in | ns / access |   vs L1 |
+| ----------- | ----------- | ----------: | ------: |
+| 32 KiB      | L1d         |        2.65 |    1.0× |
+| 256 KiB     | L2          |        7.01 |    2.6× |
+| 4 MiB       | L3          |       29.21 |     11× |
+| 128 MiB     | DRAM        |      171.56 | **65×** |
 
 The steps fall exactly on this CPU's documented cache capacities — the curve is the
 hierarchy measuring itself, with nothing hardcoded.
@@ -680,9 +716,9 @@ hierarchy measuring itself, with nothing hardcoded.
 **Cost of access order alone.** A 64 MiB matrix summed row-major and column-major:
 identical arithmetic, identical bytes, only the order differs.
 
-| order | ns / element |
-|---|---:|
-| row-major | 0.30 |
+| order        |      ns / element |
+| ------------ | ----------------: |
+| row-major    |              0.30 |
 | column-major | 11.21 (**37.3×**) |
 
 Together these set the project's priorities. A DRAM miss costs more than a hundred
