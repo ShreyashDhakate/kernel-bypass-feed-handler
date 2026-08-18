@@ -40,30 +40,13 @@ on the same host.
 
 ## Pipeline
 
-```
-   ┌──────────────────────────────────────────────────────────────────┐
-   │  nicsim              emulated PCIe device                        │
-   │  register file (BAR)  ·  RX/TX descriptor rings  ·  doorbells    │
-   └───────────────────────────────┬──────────────────────────────────┘
-                                   │  shared memory, no syscall
-   ┌───────────────────────────────▼──────────────────────────────────┐
-   │  driver              poll-mode user-space driver                 │
-   │  ring ownership  ·  buffer pool  ·  acquire/release ordering     │
-   └───────────────────────────────┬──────────────────────────────────┘
-                                   │  pointer to received frame
-   ┌───────────────────────────────▼──────────────────────────────────┐
-   │  decode              MoldUDP64 framing → ITCH 5.0 messages       │
-   │  in-place, big-endian, no allocation on the hot path             │
-   └───────────────────────────────┬──────────────────────────────────┘
-                                   │  lock-free SPSC ring
-   ┌───────────────────────────────▼──────────────────────────────────┐
-   │  book                price-level order book                      │
-   └───────────────────────────────┬──────────────────────────────────┘
-                                   │
-   ┌───────────────────────────────▼──────────────────────────────────┐
-   │  instrumentation     TSC timestamps · latency histograms         │
-   └──────────────────────────────────────────────────────────────────┘
-```
+The full architecture — the two receive paths compared, system decomposition,
+the RX hot path as a sequence with its memory-ordering requirements, descriptor
+ring mechanics, packet layout to the byte, core topology, and the latency budget —
+is diagrammed in the [README](../README.md#architecture).
+
+It is maintained there rather than duplicated here, so there is exactly one
+description of the system and it cannot drift.
 
 ## Design commitments
 
